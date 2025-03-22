@@ -2,17 +2,16 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, StandardScaler, OneHotEncoder
 from scipy.stats import boxcox, normaltest
 import math
 import scipy.stats as stats
 
 # Veri setini yükle (otomobil yakıt tüketimi ve emisyon verileri)
-# Gerçek bir uygulamada, veri setinin doğru yolunu belirtmeniz gerekir
-# Örnek amaçlı sentetik veri oluşturalım
+# Sentetik veri oluştur
 np.random.seed(42)
 n_samples = 500
 
@@ -79,11 +78,10 @@ print("=" * 50)
 categorical_columns = df.select_dtypes(include=['object']).columns.tolist()
 print(f"Kategorik sütunlar: {categorical_columns}")
 
-le = LabelEncoder()
-for col in categorical_columns:
-    df[col] = le.fit_transform(df[col])
+# One-Hot Encoding uygula
+df = pd.get_dummies(df, columns=categorical_columns, drop_first=True)
 
-print("\nDönüştürme sonrası veri seti başlığı:")
+print("\nDönüşüm sonrası veri seti başlığı:")
 print(df.head().to_string())
 
 print("\n5. KORELASYON ANALİZİ")
@@ -134,33 +132,42 @@ for col in numerical_cols:
     # Orijinal veri
     print(f"Orijinal {col} normallik testi:")
     original_normal = dagostino_test(df[col])
+    original_skewness = df[col].skew()
     
     # Log dönüşümü (log(x+1) negatif değerlerden kaçınmak için)
     log_data = np.log1p(df[col])
     print(f"\nLog dönüşümü sonrası {col} normallik testi:")
     log_normal = dagostino_test(log_data)
+    log_skewness = log_data.skew()
     
     # Kare kök dönüşümü
     sqrt_data = np.sqrt(df[col])
     print(f"\nKare kök dönüşümü sonrası {col} normallik testi:")
     sqrt_normal = dagostino_test(sqrt_data)
+    sqrt_skewness = sqrt_data.skew()
     
     # BoxCox dönüşümü (sadece pozitif değerler için)
     try:
         boxcox_data, _ = boxcox(df[col])
         print(f"\nBoxCox dönüşümü sonrası {col} normallik testi:")
         boxcox_normal = dagostino_test(pd.Series(boxcox_data))
+        boxcox_skewness = pd.Series(boxcox_data).skew()
     except:
         print("\nBoxCox dönüşümü uygulanamadı (negatif değerler olabilir)")
         boxcox_normal = False
+        boxcox_skewness = None
     
     # Dönüşüm sonuçlarını tabloya ekle
     transformation_results.append({
         'Özellik': col,
         'Orijinal Normal mi?': original_normal,
+        'Orijinal Skewness': original_skewness,
         'Log Normal mi?': log_normal,
+        'Log Skewness': log_skewness,
         'Sqrt Normal mi?': sqrt_normal,
-        'BoxCox Normal mi?': boxcox_normal
+        'Sqrt Skewness': sqrt_skewness,
+        'BoxCox Normal mi?': boxcox_normal,
+        'BoxCox Skewness': boxcox_skewness
     })
 
 # Dönüşüm sonuçları tablosunu oluştur
@@ -175,24 +182,24 @@ for col in numerical_cols[:2]:
     # Orijinal veri
     plt.subplot(2, 2, 1)
     sns.histplot(df[col].dropna(), kde=True)
-    plt.title(f'Orijinal {col}')
+    plt.title(f'Orijinal {col} (Skewness: {df[col].skew():.2f})')
     
     # Log dönüşümü
     plt.subplot(2, 2, 2)
     sns.histplot(np.log1p(df[col].dropna()), kde=True)
-    plt.title(f'Log Dönüşümü {col}')
+    plt.title(f'Log Dönüşümü {col} (Skewness: {np.log1p(df[col]).skew():.2f})')
     
     # Sqrt dönüşümü
     plt.subplot(2, 2, 3)
     sns.histplot(np.sqrt(df[col].dropna()), kde=True)
-    plt.title(f'Kare Kök Dönüşümü {col}')
+    plt.title(f'Kare Kök Dönüşümü {col} (Skewness: {np.sqrt(df[col]).skew():.2f})')
     
     # BoxCox dönüşümü
     try:
         plt.subplot(2, 2, 4)
         boxcox_data, _ = boxcox(df[col].dropna())
         sns.histplot(boxcox_data, kde=True)
-        plt.title(f'BoxCox Dönüşümü {col}')
+        plt.title(f'BoxCox Dönüşümü {col} (Skewness: {pd.Series(boxcox_data).skew():.2f})')
     except:
         plt.subplot(2, 2, 4)
         plt.text(0.5, 0.5, 'BoxCox dönüşümü uygulanamadı', 
@@ -203,7 +210,17 @@ for col in numerical_cols[:2]:
     plt.savefig(f'donusum_karsilastirma_{col}.png')
     print(f"\n{col} için dönüşüm karşılaştırması 'donusum_karsilastirma_{col}.png' olarak kaydedildi.")
 
-print("\n7. SIMPLE LINEAR REGRESSION")
+print("\n7. NORMALİZASYON")
+print("=" * 50)
+
+# Sayısal sütunları normalize et
+scaler = StandardScaler()
+df[numerical_cols] = scaler.fit_transform(df[numerical_cols])
+
+print("Normalizasyon sonrası veri seti başlığı:")
+print(df.head().to_string())
+
+print("\n8. SIMPLE LINEAR REGRESSION")
 print("=" * 50)
 
 # En yüksek korelasyona sahip özelliği seç
@@ -233,6 +250,10 @@ print(f"Ortalama Kare Hata (MSE): {mse:.4f}")
 print(f"Kök Ortalama Kare Hata (RMSE): {rmse:.4f}")
 print(f"R-kare (R²): {r2:.4f}")
 
+# Çapraz doğrulama ile R² değerini hesapla
+cv_scores = cross_val_score(simple_model, X, y, cv=5, scoring='r2')
+print(f"Çapraz Doğrulama R²: {cv_scores.mean():.4f}")
+
 # Basit doğrusal regresyonu görselleştir
 plt.figure(figsize=(10, 6))
 plt.scatter(X_test, y_test, color='blue', alpha=0.5, label='Gerçek Değerler')
@@ -246,7 +267,7 @@ plt.tight_layout()
 plt.savefig('basit_regresyon.png')
 print("\nBasit doğrusal regresyon grafiği 'basit_regresyon.png' olarak kaydedildi.")
 
-print("\n8. MULTIPLE LINEAR REGRESSION")
+print("\n9. MULTIPLE LINEAR REGRESSION")
 print("=" * 50)
 
 # En yüksek korelasyona sahip ilk 3 özelliği seç
@@ -278,8 +299,12 @@ print(f"Ortalama Kare Hata (MSE): {mse_multi:.4f}")
 print(f"Kök Ortalama Kare Hata (RMSE): {rmse_multi:.4f}")
 print(f"R-kare (R²): {r2_multi:.4f}")
 
+# Çapraz doğrulama ile R² değerini hesapla
+cv_scores_multi = cross_val_score(multi_model, X_multi, y, cv=5, scoring='r2')
+print(f"Çapraz Doğrulama R²: {cv_scores_multi.mean():.4f}")
+
 # İki modeli karşılaştır
-print("\n9. MODEL KARŞILAŞTIRMASI")
+print("\n10. MODEL KARŞILAŞTIRMASI")
 print("=" * 50)
 print(f"Basit Doğrusal Regresyon R²: {r2:.4f}")
 print(f"Çoklu Doğrusal Regresyon R²: {r2_multi:.4f}")
@@ -287,7 +312,7 @@ improvement = ((r2_multi - r2) / r2) * 100
 print(f"İyileştirme: {improvement:.2f}%")
 
 # Tahmin örneği
-print("\n10. MANUEL TAHMİN ÖRNEĞİ")
+print("\n11. MANUEL TAHMİN ÖRNEĞİ")
 print("=" * 50)
 # Örnek değerler
 sample_values = {}
@@ -311,16 +336,17 @@ for i, feature in enumerate(top_features):
 print(f"Tahmin edilen CO2 emisyonu: {math.floor(prediction)}")
 
 # Sonuç
-print("\n11. SONUÇ")
+print("\n12. SONUÇ")
 print("=" * 50)
 print("Bu çalışmada şunları gerçekleştirdik:")
 print("1. Veri setinin incelenmesi ve eksik değerlerin tespiti")
 print("2. Eksik değerlerin doldurulması")
-print("3. Kategorik değerlerin sayısal değerlere dönüştürülmesi")
+print("3. Kategorik değerlerin sayısal değerlere dönüştürülmesi (One-Hot Encoding)")
 print("4. Korelasyon analizi")
 print("5. D'Agostino K^2 testi ile normallik kontrolü")
 print("6. Farklı dönüşüm tekniklerinin karşılaştırılması (BoxCox, Log, Square Root)")
-print("7. Basit doğrusal regresyon modelinin oluşturulması ve değerlendirilmesi")
-print("8. Çoklu doğrusal regresyon modelinin oluşturulması ve değerlendirilmesi")
-print("9. Modellerin karşılaştırılması")
-print("10. Manuel tahmin örneği")
+print("7. Verilerin normalizasyonu (StandardScaler)")
+print("8. Basit doğrusal regresyon modelinin oluşturulması ve değerlendirilmesi")
+print("9. Çoklu doğrusal regresyon modelinin oluşturulması ve değerlendirilmesi")
+print("10. Modellerin karşılaştırılması")
+print("11. Manuel tahmin örneği")
